@@ -1,0 +1,72 @@
+#include <ArduinoBLE.h>
+#include <HCSR04.h>
+
+#define TRIGGER_PIN 20
+#define ECHO_PIN 21
+#define HOOP_SERVICE_ID "00001818-000a-1000-8000-00805f9b34fc"
+#define HOOP_CHAR_COLOR_ID "00001818-000a-1000-8000-00805f9b34fa"
+#define HOOP_CHAR_ACTIVE_ID "00001818-000a-1000-8000-00805f9b34fd"
+#define HOOP_CHAR_SCORE_ID "00001818-000a-1000-8000-00805f9b34fb"
+#define THIS_HOOP_COLOR 0x01
+
+UltraSonicDistanceSensor usSensor(TRIGGER_PIN, ECHO_PIN);
+
+// Create a peripheral (basketball hoop) that maintains connections to players
+BLEService hoopService(HOOP_SERVICE_ID);
+
+BLEByteCharacteristic scoreChar(HOOP_CHAR_SCORE_ID, BLERead | BLENotify);
+BLEByteCharacteristic colorChar(HOOP_CHAR_COLOR_ID, BLERead);
+BLEByteCharacteristic activeChar(HOOP_CHAR_ACTIVE_ID, BLEWrite | BLERead | BLENotify);
+
+unsigned long curTime;
+unsigned long lastTime;
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+  pinMode(LED_BUILTIN, OUTPUT);
+  curTime = millis();
+  lastTime = millis();
+  
+  BLE.begin();
+
+  BLE.setLocalName("Basketball Hoop");
+  BLE.setDeviceName("Basketball Hoop");
+  // BLE.setAppearance() (Can be used to be like "This is the RED basketball hoop/court, do you want to connect to it")
+  BLE.setAdvertisedService(hoopService);
+
+  BLE.setEventHandler(BLEConnected, ConnectHandler);
+  BLE.setEventHandler(BLEDisconnected, DisconnectHandler);
+
+  hoopService.addCharacteristic(scoreChar);
+  hoopService.addCharacteristic(colorChar);
+  hoopService.addCharacteristic(activeChar);
+
+  BLE.addService(hoopService);
+  colorChar.writeValue(THIS_HOOP_COLOR);
+  scoreChar.writeValue(0x00);
+  activeChar.writeValue(0x00);
+
+  BLE.advertise();
+  Serial.println("Setup Complete.");
+}
+
+void loop() {
+  BLE.poll();
+  int cm = usSensor.measureDistanceCm();
+  long timeDif = millis() - lastTime;
+  if (cm > 5 && cm < 30 && timeDif > 300) {
+    Serial.println("Score!");
+    scoreChar.writeValue(0x01);
+    lastTime = millis();
+  }
+  //delay(200);
+}
+
+void ConnectHandler(BLEDevice central) {
+  Serial.println("Accepted Connection: " + central.address());
+}
+
+void DisconnectHandler(BLEDevice central) {
+  Serial.println("Disconnected from: " + central.address());
+}
